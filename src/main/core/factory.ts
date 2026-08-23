@@ -120,19 +120,20 @@ export async function generateProfile(
   pendingControledMihomoConfig?: Partial<IMihomoConfig>,
   options: GenerateProfileOptions = {}
 ): Promise<string | undefined> {
-  // 读取最新的配置
-  const { current } = await getProfileConfig(true)
+  // 第一阶段：并行读取互不依赖的配置（强制重读 profileConfig 完成后再进入第二阶段，保证缓存一致）。
+  const [profileConfig, appConfig] = await Promise.all([getProfileConfig(true), getAppConfig()])
+  const { current } = profileConfig
   const profileId = options.profileId ?? current
-  const {
-    diffWorkDir = false,
-    controlDns = DEFAULT_CONTROL_DNS,
-    controlSniff = DEFAULT_CONTROL_SNIFF,
-    useNameserverPolicy
-  } = await getAppConfig()
-  const currentProfileItem = await getProfileItem(profileId)
+  // 第二阶段：仅依赖 profileId 的读取并行执行。
+  const [currentProfileItem, baseProfile, overrideIds, fetchedControledMihomoConfig] =
+    await Promise.all([
+      getProfileItem(profileId),
+      options.baseProfile ?? getProfile(profileId),
+      getOrderedOverrideIds(profileId, options.profileOverrideIds),
+      getControledMihomoConfig()
+    ])
   const ageSecretKey = options.ageSecretKey ?? currentProfileItem?.ageSecretKey ?? ''
-  const baseProfile = options.baseProfile ?? (await getProfile(profileId))
-  const overrideIds = await getOrderedOverrideIds(profileId, options.profileOverrideIds)
+  let controledMihomoConfig = pendingControledMihomoConfig ?? fetchedControledMihomoConfig
   const profileWithNormalOverride = await applyOverrides(
     baseProfile,
     overrideIds.normal,
@@ -144,8 +145,13 @@ export async function generateProfile(
     overrideIds.smart,
     ageSecretKey
   )
-  let controledMihomoConfig = pendingControledMihomoConfig ?? (await getControledMihomoConfig())
 
+  const {
+    diffWorkDir = false,
+    controlDns = DEFAULT_CONTROL_DNS,
+    controlSniff = DEFAULT_CONTROL_SNIFF,
+    useNameserverPolicy
+  } = appConfig
   // 根据开关状态过滤控制配置
   controledMihomoConfig = { ...controledMihomoConfig }
   if (!controlDns) {

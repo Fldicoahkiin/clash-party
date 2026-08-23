@@ -1,6 +1,6 @@
 import { join } from 'path'
 import { readFileSync } from 'fs'
-import { BrowserWindow, Menu, screen, shell } from 'electron'
+import { BrowserWindow, Menu, screen, shell, type IpcMainEvent } from 'electron'
 import { is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 import { getAppConfig } from './config'
@@ -105,6 +105,30 @@ let quitTimeout: NodeJS.Timeout | null = null
 let createWindowPromise: Promise<void> | null = null
 let initialRendererReady = false
 
+// 窗口在 renderer 首屏内容（路由 + 侧边栏）就绪后再显示，避免 lazy chunk 未加载完就展示空白主区。
+function waitForInitialContent(window: BrowserWindow): Promise<void> {
+  const { promise, resolve } = Promise.withResolvers<void>()
+  const { webContents } = window
+  let finished = false
+  const finish = (): void => {
+    if (finished) return
+    finished = true
+    clearTimeout(timeout)
+    webContents.off('ipc-message', onIpcMessage)
+    window.off('closed', onClosed)
+    resolve()
+  }
+  const onIpcMessage = (_event: IpcMainEvent, channel: string): void => {
+    if (channel === 'rendererFirstContentReady') finish()
+  }
+  const onClosed = (): void => finish()
+  // 内容就绪信号的兜底超时，避免 renderer 异常时窗口永不显示。
+  const timeout = setTimeout(finish, 5000)
+  webContents.on('ipc-message', onIpcMessage)
+  window.once('closed', onClosed)
+  return promise
+}
+
 // 主窗口 renderer 崩溃自动恢复的防抖，避免崩溃循环时无限重建
 const MAIN_WINDOW_CRASH_WINDOW = 60 * 1000
 const MAIN_WINDOW_MAX_CRASH_RECOVERIES = 3
@@ -192,49 +216,41 @@ async function createWindowInternal(): Promise<void> {
     mainWindow.maximize()
   }
 
-  setupWindowEvents(mainWindow, {
-    silentStart,
-    autoQuitWithoutCore,
-    autoQuitWithoutCoreDelay,
-    autoQuitWithoutCoreMode
-  })
+  setupWindowEvents(mainWindow)
 
   if (is.dev) {
     mainWindow.webContents.openDevTools()
   }
 
-  const windowToLoad = mainWindow
+  const initialContentPromise = waitForInitialContent(mainWindow)
+
+  // 加载失败自动重试；createWindow 不再 await load，避免阻塞内容就绪门控
+  mainWindow.webContents.on('did-fail-load', () => {
+    mainWindow?.webContents.reload()
+  })
+
   if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
-    await windowToLoad.loadURL(process.env['ELECTRON_RENDERER_URL'])
+    void mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL'])
   } else {
-    await windowToLoad.loadFile(join(__dirname, '../renderer/index.html'))
+    void mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
+  }
+
+  await initialContentPromise
+  if (!mainWindow || mainWindow.isDestroyed()) return
+
+  if (autoQuitWithoutCore && !mainWindow.isVisible()) {
+    scheduleQuitWithoutCore(autoQuitWithoutCoreDelay, autoQuitWithoutCoreMode)
+  }
+
+  // 开发模式下始终显示窗口
+  if (!silentStart || is.dev) {
+    clearQuitTimeout()
+    mainWindow.show()
+    mainWindow.focusOnWebView()
   }
 }
 
-interface WindowConfig {
-  silentStart: boolean
-  autoQuitWithoutCore: boolean
-  autoQuitWithoutCoreDelay: number
-  autoQuitWithoutCoreMode: AutoQuitWithoutCoreMode
-}
-
-function setupWindowEvents(window: BrowserWindow, config: WindowConfig): void {
-  const { silentStart, autoQuitWithoutCore, autoQuitWithoutCoreDelay, autoQuitWithoutCoreMode } =
-    config
-
-  window.on('ready-to-show', () => {
-    if (autoQuitWithoutCore && !window.isVisible()) {
-      scheduleQuitWithoutCore(autoQuitWithoutCoreDelay, autoQuitWithoutCoreMode)
-    }
-
-    // 开发模式下始终显示窗口
-    if (!silentStart || is.dev) {
-      clearQuitTimeout()
-      window.show()
-      window.focusOnWebView()
-    }
-  })
-
+function setupWindowEvents(window: BrowserWindow): void {
   // renderer 崩溃时外壳仍在（isDestroyed() 为 false）、did-fail-load 不触发，会白屏；销毁并按需重建
   window.webContents.on('render-process-gone', (_event, details) => {
     mainWindowLogger.error('Main window render process gone', details.reason).catch(() => {})
