@@ -11,3 +11,5 @@ publicHoistPattern:
 shamefullyHoist: true
 virtualStoreDirMaxLength: 80
 verifyDepsBeforeRun: false
+patchedDependencies:
+  vite-plugin-monaco-editor@1.1.0: patches/vite-plugin-monaco-editor@1.1.0.patch
