@@ -82,6 +82,7 @@ const execFilePromise = promisify(execFile)
 const ctlParam = process.platform === 'win32' ? '-ext-ctl-pipe' : '-ext-ctl-unix'
 const coreHookTimeout = 30000
 const automaticRestartDelay = 750
+const coreShutdownTimeout = 500
 const coreProcessNames = ['mihomo', 'mihomo-alpha', 'mihomo-smart'] as const
 
 // 核心进程状态
@@ -330,10 +331,10 @@ async function stopPidFileCore(): Promise<void> {
     try {
       if (await verifyProcessOwner(pid, coreProcessNames)) {
         process.kill(pid, 'SIGINT')
-        const deadline = Date.now() + 500
+        const deadline = Date.now() + coreShutdownTimeout
         let stillRunning = true
         while (stillRunning && Date.now() < deadline) {
-          await new Promise((resolve) => setTimeout(resolve, 50))
+          await delay(50)
           try {
             process.kill(pid, 0)
           } catch {
@@ -856,9 +857,30 @@ export async function stopCoreForExit(): Promise<void> {
 
 setStopCoreBeforeAdminRestart(stopCore)
 
+async function ensureCoreProcessExited(proc: ChildProcess | null): Promise<void> {
+  if (!proc) return
+
+  const waitForExit = async (): Promise<boolean> => {
+    const deadline = Date.now() + coreShutdownTimeout
+    while (proc.exitCode === null && proc.signalCode === null && Date.now() < deadline) {
+      await delay(50)
+    }
+    return proc.exitCode !== null || proc.signalCode !== null
+  }
+
+  if (await waitForExit()) return
+  managerLogger.warn(`Core PID ${proc.pid ?? 'unknown'} did not exit after SIGINT; sending SIGKILL`)
+  proc.kill('SIGKILL')
+  if (!(await waitForExit())) {
+    throw new Error(`Core PID ${proc.pid ?? 'unknown'} is still running after SIGKILL`)
+  }
+}
+
 async function restartCoreOnce(forceStop: boolean): Promise<void> {
   const startAttempt = await runCoreOperation(async () => {
+    const previousChild = child
     await stopCoreInternal(forceStop)
+    if (process.platform === 'darwin') await ensureCoreProcessExited(previousChild)
     return startCoreInternal(false, true)
   })
   await startAttempt.readiness

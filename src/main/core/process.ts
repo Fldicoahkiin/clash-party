@@ -199,7 +199,8 @@ export async function verifyProcessOwner(
       if (!match || parseInt(match[2], 10) !== pid) return false
       processName = match[1]
     } else {
-      const { stdout } = await execFilePromise('ps', ['-p', `${pid}`, '-o', 'comm='], {
+      const nameField = process.platform === 'darwin' ? 'ucomm=' : 'comm='
+      const { stdout } = await execFilePromise('ps', ['-p', `${pid}`, '-o', nameField], {
         timeout: 1000
       })
       processName = stdout.trim().split(/\r?\n/, 1)[0] || ''
