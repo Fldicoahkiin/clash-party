@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from '@renderer/components/base/toast'
 import { Button, Input, Select, SelectItem, Switch } from '@heroui/react'
 import { listWebdavBackups, webdavBackup, reinitWebdavBackupScheduler } from '@renderer/utils/ipc'
@@ -36,10 +36,8 @@ const WebdavConfig: React.FC = () => {
     webdavBackupCron,
     webdavIgnoreCert
   })
-  // patchAppConfig 会随渲染变化，用 ref 取最新值，避免把它写进 useMemo 依赖导致防抖函数被重建
   const patchAppConfigRef = useRef(patchAppConfig)
   patchAppConfigRef.current = patchAppConfig
-  // 防抖函数的定时器存在闭包里，必须跨渲染复用同一个实例，否则每次输入都是新闭包、清不掉上一次的定时器，防抖失效
   const setWebdavDebounce = useMemo(
     () =>
       debounce(
@@ -64,6 +62,8 @@ const WebdavConfig: React.FC = () => {
       ),
     []
   )
+  useEffect(() => () => setWebdavDebounce.cancel(), [setWebdavDebounce])
+
   const handleBackup = async (): Promise<void> => {
     setBackuping(true)
     try {
@@ -144,7 +144,7 @@ const WebdavConfig: React.FC = () => {
         <SettingItem title={t('webdav.maxBackups')} divider>
           <Select
             classNames={{ trigger: 'data-[hover=true]:bg-default-200' }}
-            className="w-[150px]"
+            className="w-37.5"
             size="sm"
             selectedKeys={new Set([webdav.webdavMaxBackups.toString()])}
             aria-label={t('webdav.maxBackups')}
