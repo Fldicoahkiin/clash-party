@@ -7,6 +7,7 @@ import { mainWindow } from '../window'
 import { tray } from '../resolve/tray'
 import { calcTraffic } from '../utils/calc'
 import { floatingWindow } from '../resolve/floatingWindow'
+import { recordTrafficUsage } from '../traffic/recorder'
 import { createLogger } from '../utils/logger'
 import { mihomoWorkConfigPath } from '../utils/dirs'
 import { generateProfile, getRuntimeConfig } from './factory'
@@ -632,7 +633,11 @@ const mihomoConnections = async (): Promise<void> => {
     const data = e.data as string
     connectionsStream.retry = MAX_RETRY
     try {
-      mainWindow?.webContents.send('mihomoConnections', JSON.parse(data) as IMihomoConnectionsInfo)
+      const info = JSON.parse(data) as IMihomoConnectionsInfo
+      recordTrafficUsage(info)
+      if (__LEGACY_BUILD__ || mainWindow?.isVisible()) {
+        mainWindow?.webContents.send('mihomoConnections', info)
+      }
     } catch {
       // ignore
     }

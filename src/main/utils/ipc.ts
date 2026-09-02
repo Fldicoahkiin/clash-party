@@ -132,6 +132,12 @@ import {
   patchPluginItem
 } from '../resolve/plugin'
 import { getPluginConfig } from '../config/plugin'
+import {
+  clearTrafficUsage,
+  importTrafficUsage,
+  queryTrafficUsageBreakdown,
+  queryTrafficUsageOverview
+} from '../traffic/database'
 import { getImageDataURL } from './image'
 import { get as httpGet } from './chromeRequest'
 import { getIconDataURL } from './icon'
@@ -236,6 +242,10 @@ const asyncHandlers: Record<string, AsyncFn> = {
   mihomoCloseAllConnections,
   mihomoRules,
   mihomoRulesDisable,
+  queryTrafficUsageOverview,
+  queryTrafficUsageBreakdown,
+  importTrafficUsage,
+  clearTrafficUsage,
   mihomoProxies,
   mihomoGroups,
   mihomoProxyProviders,

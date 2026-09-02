@@ -1,4 +1,11 @@
 import { TitleBarOverlayOptions } from 'electron'
+import type {
+  TrafficUsageAggregate,
+  TrafficUsageBreakdownQuery,
+  TrafficUsageDimension,
+  TrafficUsageImportBatch,
+  TrafficUsageOverview
+} from '../../../shared/trafficUsage'
 
 function checkIpcError<T>(response: unknown): T {
   if (response && typeof response === 'object' && 'invokeError' in response) {
@@ -36,6 +43,17 @@ interface IpcApi {
   patchMihomoConfig: (patch: Partial<IMihomoConfig>) => Promise<void>
   mihomoSmartGroupWeights: (groupName: string) => Promise<Record<string, number>>
   mihomoSmartFlushCache: (configName?: string) => Promise<void>
+  queryTrafficUsageOverview: (
+    type: TrafficUsageDimension,
+    startTime: number,
+    endTime: number,
+    bucketSizeMs: number
+  ) => Promise<TrafficUsageOverview>
+  queryTrafficUsageBreakdown: (
+    query: TrafficUsageBreakdownQuery
+  ) => Promise<TrafficUsageAggregate[]>
+  importTrafficUsage: (batch: TrafficUsageImportBatch) => Promise<void>
+  clearTrafficUsage: () => Promise<void>
   getSmartOverrideContent: () => Promise<string | null>
   // AutoRun
   checkAutoRun: () => Promise<boolean>
@@ -208,6 +226,10 @@ export const {
   patchMihomoConfig,
   mihomoSmartGroupWeights,
   mihomoSmartFlushCache,
+  queryTrafficUsageOverview,
+  queryTrafficUsageBreakdown,
+  importTrafficUsage,
+  clearTrafficUsage,
   getSmartOverrideContent,
   // AutoRun
   checkAutoRun,

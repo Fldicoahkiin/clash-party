@@ -13,6 +13,17 @@ import { setAppLogDisabled } from '../utils/logger'
 
 let appConfig: IAppConfig // config.yaml
 const appConfigWriteQueue = new WriteQueue()
+const appConfigListeners = new Set<(config: IAppConfig) => void>()
+
+function notifyAppConfigListeners(): void {
+  for (const listener of appConfigListeners) listener(appConfig)
+}
+
+export function subscribeAppConfig(listener: (config: IAppConfig) => void): () => void {
+  appConfigListeners.add(listener)
+  if (appConfig) listener(appConfig)
+  return () => appConfigListeners.delete(listener)
+}
 
 function cloneDefaultConfig(): IAppConfig {
   return JSON.parse(JSON.stringify(defaultConfig)) as IAppConfig
@@ -32,6 +43,7 @@ export async function getAppConfig(force = false): Promise<IAppConfig> {
       setCoreLogDisabled(mergedConfig.disableCoreLog === true)
       setAppLogDisabled(mergedConfig.disableAppLog === true)
       appConfig = mergedConfig
+      notifyAppConfigListeners()
     })
   }
   if (typeof appConfig !== 'object') appConfig = cloneDefaultConfig()
@@ -54,5 +66,6 @@ export async function patchAppConfig(patch: Partial<IAppConfig>): Promise<void> 
     setGlobalMaxLogFileSizeMB(nextConfig.maxLogFileSize)
     setCoreLogDisabled(nextConfig.disableCoreLog === true)
     setAppLogDisabled(nextConfig.disableAppLog === true)
+    notifyAppConfigListeners()
   })
 }
